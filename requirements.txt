@@ -2,4 +2,6 @@ streamlit
 textblob
 speechrecognition
 pydub
-
+wordcloud
+matplotlib
+pyaudio ; platform_system == "Windows"

@@ -1,35 +1,51 @@
-# 🎤 Voice Sentiment Detection App
+# 🎤 Real-Time Chat with Sentiment Detection
 
-This is a Streamlit-powered Python app that allows users to *speak via microphone, then automatically analyzes the **sentiment* (positive, negative, or neutral) of the transcribed text using *NLP (Natural Language Processing)*.
+> Built using Python · Streamlit · SpeechRecognition · TextBlob
 
----
-
-## 🔥 Features
-
-- 🎙 Voice Input using your system's microphone
-- 🧠 Sentiment Analysis using TextBlob
-- 🗣 Real-time transcription using SpeechRecognition
-- 🌈 Easy-to-use web interface (Streamlit)
-- 🚀 Fully deployable and shareable
+A smart, AI-powered web app that lets users *type or speak* messages and instantly detects the *emotional tone*—Positive, Negative, or Neutral.
 
 ---
 
-## ⚙ Tech Stack
-
-- Python 3
-- Streamlit
-- SpeechRecognition
-- TextBlob
-- PyAudio
+## 🚀 Live Demo  
+👉 [Click here to try the app](https://voice-sentiment-app-<your-id>.streamlit.app)  
+_(Replace <your-id> with your actual Streamlit app link)_
 
 ---
 
-## 🚀 How to Run It Locally
+## ✨ Features
 
-Make sure you have Python installed, then open terminal or CMD and type:
+- 💬 *Real-Time Text Sentiment*: Instantly analyzes text messages as you type.
+- 🎙 *Voice Input (WAV)*: Upload .wav audio files for sentiment detection.
+- 🧠 *NLP-powered: Uses TextBlob to classify messages as **Positive, **Negative, or **Neutral*.
+- 📱 *Mobile-Friendly UI*: Clean and responsive interface powered by Streamlit.
+- 📁 *Safe File Handling*: Uploaded files are processed securely in memory.
+- 🔁 *Two Input Modes*: Text box and audio file upload—choose as per your preference.
+
+---
+
+## 📸 Screenshot
+
+![App Screenshot](screenshot.png)  
+_(You can replace screenshot.png with a real screenshot image of your app in the repo.)_
+
+---
+
+## 🛠 Tech Stack
+
+- *Python 3.9+*
+- *Streamlit* – Frontend and deployment
+- *TextBlob* – Sentiment analysis
+- *SpeechRecognition* – Converts voice to text
+- *PyDub* – Audio preprocessing
+- *Tempfile* – Temporary file handling
+
+---
+
+## 📦 Installation
+
+Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+git clone https://github.com/ayan09l/voice-sentiment-app.git
+cd voice-sentiment-app
 pip install -r requirements.txt
-streamlit run app.py
