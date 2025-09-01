@@ -1,7 +1,6 @@
-streamlit
-textblob
-speechrecognition
-pydub
-wordcloud
+streamlit==1.35.0
+textblob==0.17.1
+SpeechRecognition==3.10.0
+streamlit-authenticator==0.2.3
+PyYAML==6.0.1
 matplotlib
-pyaudio ; platform_system == "Windows"
