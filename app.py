@@ -3,55 +3,101 @@ import speech_recognition as sr
 from textblob import TextBlob
 from datetime import datetime
 import matplotlib.pyplot as plt
+from googletrans import Translator
+import pyttsx3
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 
-# -------------------- HTML + CSS STYLING --------------------
+# -------------------- LOAD CHATBOT --------------------
+tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-small")
+model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-small")
+translator = Translator()
+
+# -------------------- STYLES --------------------
 st.markdown("""
     <style>
-    /* Background gradient for entire app */
-    .stApp {
-        background: linear-gradient(to right, #ffecd2, #fcb69f);
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        color: #333333;
-    }
-
-    /* Card style for each section */
-    .card {
-        background-color: rgba(255, 255, 255, 0.85);
-        padding: 20px;
-        border-radius: 15px;
-        margin-bottom: 20px;
-        box-shadow: 2px 2px 12px rgba(0,0,0,0.1);
-    }
-
-    /* Button styling */
+    .stApp { background: linear-gradient(to right, #ffecd2, #fcb69f); }
+    .card { background-color: rgba(255, 255, 255, 0.9); padding:20px; border-radius:15px; margin-bottom:20px; }
     .stButton>button {
-        background-color: #ff7f50;
-        color: white;
-        font-weight: bold;
-        border-radius: 10px;
-        padding: 0.5em 1em;
-        transition: 0.3s;
+        background-color: #ff7f50; color:white; font-weight:bold; border-radius:10px; padding:0.5em 1em;
     }
-    .stButton>button:hover {
-        background-color: #ff4500;
-        color: white;
-    }
-
-    /* Header style */
-    h1 {
-        color: #ff4500;
-        text-align: center;
-    }
+    .stButton>button:hover { background-color:#ff4500; }
+    h1 { color:#ff4500; text-align:center; }
     </style>
 """, unsafe_allow_html=True)
 
 # -------------------- APP TITLE --------------------
-st.markdown('<h1>🎙 Voice + Chat Sentiment Detection</h1>', unsafe_allow_html=True)
+st.markdown('<h1>🌍 Multilingual Voice + Chat Sentiment Chatbot</h1>', unsafe_allow_html=True)
 
 # -------------------- SESSION STATE --------------------
 if "sentiment_history" not in st.session_state:
     st.session_state.sentiment_history = []
+if "chat_history_ids" not in st.session_state:
+    st.session_state.chat_history_ids = None
+if "reminders" not in st.session_state:
+    st.session_state.reminders = []
 
+
+# -------------------- FUNCTION: Chatbot --------------------
+def chatbot_reply(user_text):
+    new_input_ids = tokenizer.encode(user_text + tokenizer.eos_token, return_tensors="pt")
+
+    # Fix meta tensor error safely
+    try:
+        if st.session_state.chat_history_ids is not None:
+            st.session_state.chat_history_ids = st.session_state.chat_history_ids.to("cpu")
+            bot_input_ids = torch.cat([st.session_state.chat_history_ids, new_input_ids], dim=-1)
+        else:
+            bot_input_ids = new_input_ids
+
+        st.session_state.chat_history_ids = model.generate(
+            bot_input_ids,
+            max_length=200,
+            pad_token_id=tokenizer.eos_token_id
+        )
+        reply = tokenizer.decode(
+            st.session_state.chat_history_ids[:, bot_input_ids.shape[-1]:][0],
+            skip_special_tokens=True
+        )
+    except RuntimeError as e:
+        st.error(f"Chatbot error: {e}")
+        return "Sorry, there was an error generating a reply."
+
+    return reply
+
+
+# -------------------- FUNCTION: Multilingual Processing --------------------
+def process_text(user_text, lang="en"):
+    # Translate input if not English
+    if lang != "en":
+        translated = translator.translate(user_text, src=lang, dest="en")
+        user_text_en = translated.text
+    else:
+        user_text_en = user_text
+
+    # Sentiment
+    analysis = TextBlob(user_text_en)
+    polarity = analysis.sentiment.polarity
+
+    # Chatbot
+    reply_en = chatbot_reply(user_text_en)
+
+    # Translate reply back
+    if lang != "en":
+        translated_reply = translator.translate(reply_en, src="en", dest=lang)
+        reply = translated_reply.text
+    else:
+        reply = reply_en
+
+    return reply, polarity
+
+
+# -------------------- LANG SELECTION --------------------
+lang_choice = st.selectbox("🌐 Choose Language", ["English", "Hindi", "Odia"])
+lang_map = {"English": "en", "Hindi": "hi", "Odia": "or"}
+user_lang = lang_map[lang_choice]
+
+# -------------------- TABS --------------------
 tab1, tab2 = st.tabs(["🗣 Voice Input", "⌨ Chat Input"])
 
 # -------------------- VOICE INPUT --------------------
@@ -63,34 +109,53 @@ with tab1:
             st.info("Listening... please speak into your mic")
             audio = recognizer.listen(source)
         try:
-            text = recognizer.recognize_google(audio)
+            text = recognizer.recognize_google(audio, language=f"{user_lang}-IN" if user_lang != "en" else "en-IN")
             st.success(f"Recognized: {text}")
-            analysis = TextBlob(text)
-            polarity = analysis.sentiment.polarity
+
+            reply, polarity = process_text(text, lang=user_lang)
+
+            # Sentiment Display
             if polarity > 0:
-                st.markdown(f"<h3 style='color:green'>😊 Positive Sentiment (Polarity: {polarity})</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='color:green'>😊 Positive (Polarity: {polarity})</h3>", unsafe_allow_html=True)
             elif polarity < 0:
-                st.markdown(f"<h3 style='color:red'>😡 Negative Sentiment (Polarity: {polarity})</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='color:red'>😡 Negative (Polarity: {polarity})</h3>", unsafe_allow_html=True)
             else:
-                st.markdown(f"<h3 style='color:orange'>😐 Neutral Sentiment (Polarity: {polarity})</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='color:orange'>😐 Neutral (Polarity: {polarity})</h3>", unsafe_allow_html=True)
+
+            # Bot reply
+            st.markdown(f"<div class='card'><b>🤖 Bot:</b> {reply}</div>", unsafe_allow_html=True)
+
+            # Voice output
+            engine = pyttsx3.init()
+            engine.say(reply)
+            engine.runAndWait()
+
             st.session_state.sentiment_history.append((datetime.now(), polarity))
+
         except:
             st.error("Sorry, I couldn't recognize what you said.")
 
 # -------------------- CHAT INPUT --------------------
 with tab2:
     st.markdown('<div class="card"><h2>💬 Enter Text</h2></div>', unsafe_allow_html=True)
-    chat_input = st.text_input("Type a sentence")
-    if st.button("Analyze Text"):
+    chat_input = st.text_input("Type a message")
+    if st.button("Analyze & Reply"):
         if chat_input:
-            analysis = TextBlob(chat_input)
-            polarity = analysis.sentiment.polarity
+            reply, polarity = process_text(chat_input, lang=user_lang)
+
             if polarity > 0:
-                st.markdown(f"<h3 style='color:green'>😊 Positive Sentiment (Polarity: {polarity})</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='color:green'>😊 Positive (Polarity: {polarity})</h3>", unsafe_allow_html=True)
             elif polarity < 0:
-                st.markdown(f"<h3 style='color:red'>😡 Negative Sentiment (Polarity: {polarity})</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='color:red'>😡 Negative (Polarity: {polarity})</h3>", unsafe_allow_html=True)
             else:
-                st.markdown(f"<h3 style='color:orange'>😐 Neutral Sentiment (Polarity: {polarity})</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='color:orange'>😐 Neutral (Polarity: {polarity})</h3>", unsafe_allow_html=True)
+
+            st.markdown(f"<div class='card'><b>🤖 Bot:</b> {reply}</div>", unsafe_allow_html=True)
+
+            engine = pyttsx3.init()
+            engine.say(reply)
+            engine.runAndWait()
+
             st.session_state.sentiment_history.append((datetime.now(), polarity))
         else:
             st.warning("Please enter some text.")
@@ -110,6 +175,23 @@ if len(st.session_state.sentiment_history) > 1:
     plt.xticks(rotation=30)
     st.pyplot(plt)
 
+# -------------------- REMINDERS --------------------
+st.markdown('<div class="card"><h2>⏰ Reminders</h2></div>', unsafe_allow_html=True)
+reminder_input = st.text_input("Add a new reminder")
+if st.button("Add Reminder"):
+    if reminder_input:
+        st.session_state.reminders.append((datetime.now().strftime("%Y-%m-%d %H:%M"), reminder_input))
+        st.success("Reminder added!")
+    else:
+        st.warning("Enter a reminder first")
+
+if st.session_state.reminders:
+    st.markdown("**Your Reminders:**")
+    for t, r in st.session_state.reminders:
+        st.markdown(f"- [{t}] {r}")
+
 # -------------------- FOOTER --------------------
 st.markdown("---")
-st.markdown('<p style="text-align:center;">🔧 Built with Python + Streamlit + TextBlob + SpeechRecognition</p>', unsafe_allow_html=True)
+st.markdown(
+    '<p style="text-align:center;">🌐 Multilingual AI Chatbot | Built with Python + Streamlit + HuggingFace + GoogleTrans</p>',
+    unsafe_allow_html=True)
