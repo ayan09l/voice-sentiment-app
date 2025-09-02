@@ -7,6 +7,7 @@ from googletrans import Translator
 import pyttsx3
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
+import os
 
 # -------------------- LOAD CHATBOT --------------------
 tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-small")
@@ -37,12 +38,13 @@ if "chat_history_ids" not in st.session_state:
 if "reminders" not in st.session_state:
     st.session_state.reminders = []
 
+# Detect if running locally
+IS_LOCAL = os.environ.get("IS_LOCAL", "true") == "true"
 
 # -------------------- FUNCTION: Chatbot --------------------
 def chatbot_reply(user_text):
     new_input_ids = tokenizer.encode(user_text + tokenizer.eos_token, return_tensors="pt")
 
-    # Fix meta tensor error safely
     try:
         if st.session_state.chat_history_ids is not None:
             st.session_state.chat_history_ids = st.session_state.chat_history_ids.to("cpu")
@@ -65,32 +67,25 @@ def chatbot_reply(user_text):
 
     return reply
 
-
 # -------------------- FUNCTION: Multilingual Processing --------------------
 def process_text(user_text, lang="en"):
-    # Translate input if not English
     if lang != "en":
         translated = translator.translate(user_text, src=lang, dest="en")
         user_text_en = translated.text
     else:
         user_text_en = user_text
 
-    # Sentiment
     analysis = TextBlob(user_text_en)
     polarity = analysis.sentiment.polarity
-
-    # Chatbot
     reply_en = chatbot_reply(user_text_en)
 
-    # Translate reply back
     if lang != "en":
         translated_reply = translator.translate(reply_en, src="en", dest=lang)
         reply = translated_reply.text
     else:
         reply = reply_en
 
-    return reply, polarity
-
+    return reply, reply_en, polarity
 
 # -------------------- LANG SELECTION --------------------
 lang_choice = st.selectbox("🌐 Choose Language", ["English", "Hindi", "Odia"])
@@ -103,7 +98,7 @@ tab1, tab2 = st.tabs(["🗣 Voice Input", "⌨ Chat Input"])
 # -------------------- VOICE INPUT --------------------
 with tab1:
     st.markdown('<div class="card"><h2>🎤 Speak Now</h2></div>', unsafe_allow_html=True)
-    if st.button("Start Listening"):
+    if IS_LOCAL and st.button("Start Listening"):
         recognizer = sr.Recognizer()
         with sr.Microphone() as source:
             st.info("Listening... please speak into your mic")
@@ -112,7 +107,7 @@ with tab1:
             text = recognizer.recognize_google(audio, language=f"{user_lang}-IN" if user_lang != "en" else "en-IN")
             st.success(f"Recognized: {text}")
 
-            reply, polarity = process_text(text, lang=user_lang)
+            reply, reply_en, polarity = process_text(text, lang=user_lang)
 
             # Sentiment Display
             if polarity > 0:
@@ -123,12 +118,17 @@ with tab1:
                 st.markdown(f"<h3 style='color:orange'>😐 Neutral (Polarity: {polarity})</h3>", unsafe_allow_html=True)
 
             # Bot reply
-            st.markdown(f"<div class='card'><b>🤖 Bot:</b> {reply}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='card'><b>🤖 Bot (Translated):</b> {reply}</div>", unsafe_allow_html=True)
+            if lang_choice != "English":
+                st.markdown(f"<div class='card'><b>🤖 Bot (Original English):</b> {reply_en}</div>", unsafe_allow_html=True)
 
             # Voice output
-            engine = pyttsx3.init()
-            engine.say(reply)
-            engine.runAndWait()
+            try:
+                engine = pyttsx3.init()
+                engine.say(reply)
+                engine.runAndWait()
+            except:
+                pass
 
             st.session_state.sentiment_history.append((datetime.now(), polarity))
 
@@ -141,7 +141,7 @@ with tab2:
     chat_input = st.text_input("Type a message")
     if st.button("Analyze & Reply"):
         if chat_input:
-            reply, polarity = process_text(chat_input, lang=user_lang)
+            reply, reply_en, polarity = process_text(chat_input, lang=user_lang)
 
             if polarity > 0:
                 st.markdown(f"<h3 style='color:green'>😊 Positive (Polarity: {polarity})</h3>", unsafe_allow_html=True)
@@ -150,11 +150,16 @@ with tab2:
             else:
                 st.markdown(f"<h3 style='color:orange'>😐 Neutral (Polarity: {polarity})</h3>", unsafe_allow_html=True)
 
-            st.markdown(f"<div class='card'><b>🤖 Bot:</b> {reply}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='card'><b>🤖 Bot (Translated):</b> {reply}</div>", unsafe_allow_html=True)
+            if lang_choice != "English":
+                st.markdown(f"<div class='card'><b>🤖 Bot (Original English):</b> {reply_en}</div>", unsafe_allow_html=True)
 
-            engine = pyttsx3.init()
-            engine.say(reply)
-            engine.runAndWait()
+            try:
+                engine = pyttsx3.init()
+                engine.say(reply)
+                engine.runAndWait()
+            except:
+                pass
 
             st.session_state.sentiment_history.append((datetime.now(), polarity))
         else:
@@ -169,14 +174,16 @@ if len(st.session_state.sentiment_history) > 1:
     plt.plot(times, polarities, marker='o', linestyle='-', color='orange')
     plt.scatter(times, polarities, color=colors, s=100)
     plt.axhline(y=0, color='gray', linestyle='--')
+    plt.grid(True)
+    plt.gcf().autofmt_xdate()
     plt.xlabel("Time")
     plt.ylabel("Polarity")
     plt.title("Sentiment Trend Over Time")
-    plt.xticks(rotation=30)
     st.pyplot(plt)
 
 # -------------------- REMINDERS --------------------
 st.markdown('<div class="card"><h2>⏰ Reminders</h2></div>', unsafe_allow_html=True)
+
 reminder_input = st.text_input("Add a new reminder")
 if st.button("Add Reminder"):
     if reminder_input:
@@ -185,10 +192,30 @@ if st.button("Add Reminder"):
     else:
         st.warning("Enter a reminder first")
 
+# Voice input for reminders (local only)
+if IS_LOCAL:
+    with st.expander("🎤 Speak a Reminder"):
+        if st.button("Start Listening for Reminder"):
+            recognizer = sr.Recognizer()
+            with sr.Microphone() as source:
+                st.info("Listening... please speak your reminder")
+                audio = recognizer.listen(source)
+            try:
+                reminder_text = recognizer.recognize_google(audio, language=f"{user_lang}-IN" if user_lang!="en" else "en-IN")
+                st.success(f"Recognized: {reminder_text}")
+                st.session_state.reminders.append((datetime.now().strftime("%Y-%m-%d %H:%M"), reminder_text))
+            except:
+                st.error("Could not recognize the reminder")
+
+# Display and delete reminders
 if st.session_state.reminders:
-    st.markdown("**Your Reminders:**")
-    for t, r in st.session_state.reminders:
-        st.markdown(f"- [{t}] {r}")
+    st.markdown("*Your Reminders:*")
+    for i, (t, r) in enumerate(st.session_state.reminders):
+        col1, col2 = st.columns([8,1])
+        col1.markdown(f"- [{t}] {r}")
+        if col2.button("❌", key=f"del{i}"):
+            st.session_state.reminders.pop(i)
+            st.experimental_rerun()
 
 # -------------------- FOOTER --------------------
 st.markdown("---")
